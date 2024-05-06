@@ -1,6 +1,10 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
+from django.http import HttpResponse
+from django.contrib.auth.models import User
+from django.core.exceptions import ObjectDoesNotExist
 from .models import Post, Category
+from .forms import ProfileForm, PostForm
 
 
 def get_published_posts():
@@ -34,4 +38,33 @@ def profile_view(request, username):
     context = {
         'profile': profile,
     }
-    return render(request, 'profile.html', context)
+    return render(request, 'blog/profile.html', context)
+
+
+def edit_profile(request):
+    try:
+        profile = request.user.profile
+    except ObjectDoesNotExist:
+        profile = None
+
+    # Создание формы с данными профиля пользователя
+    form = ProfileForm(instance=profile)
+
+    context = {
+        'form': form,
+        'profile': profile
+    }
+    return render(request, 'blog/user.html', context)
+
+
+def create_post(request):
+    if request.method == 'POST':
+        form = PostForm(request.POST)
+        if form.is_valid():
+            post = form.save(commit=False)
+            post.pub_date = timezone.now()  # Установка текущей даты и времени
+            post.save()
+            return redirect('post_detail', id=post.pk)
+    else:
+        form = PostForm()
+    return render(request, 'blog/create.html', {'form': form})
