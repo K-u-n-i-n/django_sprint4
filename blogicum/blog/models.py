@@ -78,20 +78,25 @@ class Post(BaseModel):
         verbose_name_plural = 'Публикации'
         default_related_name = 'posts'
 
-
-    
-
     def __str__(self):
         return self.title
 
 
 class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    location = models.CharField(max_length=100, blank=True)
-    # Добавляем поля для имени, фамилии и адреса электронной почты
-    first_name = models.CharField(max_length=30, blank=True)
-    last_name = models.CharField(max_length=30, blank=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)    
+    first_name = models.CharField(max_length=30, blank=True, verbose_name='Имя')
+    last_name = models.CharField(max_length=30, blank=True, verbose_name='Фамилия')
     email = models.EmailField(blank=True)
 
     def __str__(self):
         return self.user.username
+
+
+class Comment(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
