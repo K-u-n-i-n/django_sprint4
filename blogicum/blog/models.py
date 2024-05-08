@@ -68,11 +68,18 @@ class Post(BaseModel):
         on_delete=models.SET_NULL, null=True,
         verbose_name='Категория'
     )
+    image = models.ImageField(
+        upload_to='blogs_images', null=True, blank=True,
+        verbose_name='Фото'
+    )
 
     class Meta:
         verbose_name = 'публикация'
         verbose_name_plural = 'Публикации'
         default_related_name = 'posts'
+
+
+    
 
     def __str__(self):
         return self.title
@@ -80,7 +87,6 @@ class Post(BaseModel):
 
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    bio = models.TextField(blank=True)
     location = models.CharField(max_length=100, blank=True)
     # Добавляем поля для имени, фамилии и адреса электронной почты
     first_name = models.CharField(max_length=30, blank=True)
