@@ -10,7 +10,7 @@ from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.urls import reverse_lazy
 
 from .forms import CommentForm, PostForm, UserProfileForm
-from .models import Post, Category
+from .models import Post, Category, Comment
 
 
 @login_required
@@ -102,6 +102,10 @@ class PostUpdateView(OnlyAuthorMixin, UpdateView):
     """
     model = Post
     form_class = PostForm
+    template_name = 'blog/create.html'
+    
+    def get_success_url(self):
+        return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.pk})
 
 
 class PostDeleteView(LoginRequiredMixin, DeleteView):
@@ -128,6 +132,13 @@ class PostDetailView(DetailView):
         model: модель данных, используемая для отображения информации о посте (Post).
     """
     model = Post
+    template_name = 'blog/detail.html'
+    context_object_name = 'post'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['form'] = CommentForm()
+        return context
 
 
 class ProfileView(ListView):
@@ -147,7 +158,7 @@ class ProfileView(ListView):
         get_context_data(self, **kwargs): метод, добавляющий дополнительные данные в контекст шаблона для отображения.
     """
     model = Post
-    template_name = 'blog/profile.html'    
+    template_name = 'blog/profile.html'
     paginate_by = 10
 
     def get_queryset(self):
@@ -247,6 +258,7 @@ def edit_profile(request):
 
 
 class AddCommentView(View):
+
     """
     Класс для добавления комментария к посту.
 
@@ -279,18 +291,52 @@ class AddCommentView(View):
             Исключения:
                 Нет обработки конкретных исключений.
     """
-    @login_required
-    def post(self, request, pk):
-        post = get_object_or_404(Post, pk=pk)
 
-        form = CommentForm(request.POST)
+    form_class = CommentForm
+    template_name = 'comments.html'
 
+    def post(self, request, *args, **kwargs):
+        form = self.form_class(request.POST)
         if form.is_valid():
+            post_id = kwargs['pk']
+            post = Post.objects.get(id=post_id)
             comment = form.save(commit=False)
-            comment.author = request.user
             comment.post = post
             comment.save()
+            return render(request, 'comments.html', {'form': form, 'post': post})
+        else:
+            return render(request, 'comments.html', {'form': form})
 
-            return redirect('post_detail', pk=pk)
 
-        return redirect('post_detail', pk=pk)
+class EditCommentView(LoginRequiredMixin, View):
+    def get(self, request, post_id, comment_id):
+        comment = get_object_or_404(Comment, id=comment_id)
+        if request.user == comment.author:
+            form = CommentForm(instance=comment)
+            context = {
+                'user': request.user,
+                'post_id': post_id,
+                'comment_id': comment_id,
+                'form': form
+            }
+            return render(request, 'edit_comment.html', context)
+        else:
+            return redirect('blog:comment_list', post_id)
+
+    def post(self, request, post_id, comment_id):
+        comment = get_object_or_404(Comment, id=comment_id)
+        if request.user == comment.author:
+            form = CommentForm(request.POST, instance=comment)
+            if form.is_valid():
+                form.save()
+            return redirect('blog:comment_list', post_id)
+        else:
+            return redirect('blog:comment_list', post_id)
+
+
+class DeleteCommentView(LoginRequiredMixin, View):
+    def get(self, request, post_id, comment_id):
+        comment = get_object_or_404(Comment, id=comment_id)
+        if request.user == comment.author:
+            comment.delete()
+        return redirect('blog:comment_list', post_id)
