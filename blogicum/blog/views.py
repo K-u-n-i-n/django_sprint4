@@ -184,37 +184,23 @@ class ProfileView(ListView):
         return context
 
 
-def category_posts(request, **kwargs):
-    """
-    Функция для отображения постов определенной категории.
+class CategoryPostsView(ListView):
+    model = Post
+    template_name = 'blog/category.html'
+    context_object_name = 'posts'
+    paginate_by = 10
 
-    Аргументы:
-        request: объект запроса Django.
-        **kwargs: дополнительные аргументы, в данном случае содержит 'category_slug'.
+    def get_queryset(self):
+        category_slug = self.kwargs.get('category_slug')
+        category = get_object_or_404(Category, slug=category_slug)
+        return Post.objects.filter(category=category, is_published=True)
 
-    Возвращает:
-        Шаблон 'blog/category.html' с контекстом, содержащим список постов и категорию.
-
-    Исключения:
-        PageNotAnInteger: если номер страницы не является целым числом.
-        EmptyPage: если запрошенная страница пуста.
-    """
-    category_slug = kwargs.get('category_slug')
-    category = get_object_or_404(Category, slug=category_slug)
-    posts = Post.objects.filter(category=category, is_published=True)
-
-    page_number = request.GET.get('page')
-    # Разбиваем список записей на страницы, по 10 записей на страницу
-    paginator = Paginator(posts, 10)
-
-    try:
-        posts = paginator.page(page_number)
-    except PageNotAnInteger:
-        posts = paginator.page(1)
-    except EmptyPage:
-        posts = paginator.page(paginator.num_pages)
-
-    return render(request, 'blog/category.html', {'posts': posts, 'category': category})
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        category_slug = self.kwargs.get('category_slug')
+        category = get_object_or_404(Category, slug=category_slug)
+        context['category'] = category
+        return context
 
 
 def edit_profile(request):
