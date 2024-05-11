@@ -83,10 +83,13 @@ class Post(BaseModel):
 
 
 class Comment(models.Model):
-    name = models.CharField(max_length=100)
-    email = models.EmailField()
-    body = models.TextField()
+    author = models.ForeignKey(
+        User, on_delete=models.CASCADE, null=True,
+        verbose_name='Автор комментария'
+    )
+    post = models.ForeignKey(Post, related_name='comments', on_delete=models.CASCADE, null=True)
+    content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.name
+        return self.content

@@ -7,6 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.db.models import Count
 from django.urls import reverse_lazy
 
 from .forms import CommentForm, PostForm, UserProfileForm
@@ -26,7 +27,7 @@ def simple_view(request):
 
     Логика работы:
         - Проверяет, что пользователь авторизован.
-        - Возвращает HttpResponse с сообщением о том, что это страница только для залогиненных пользователей.    
+        - Возвращает HttpResponse с сообщением о том, что это страница только для залогиненных пользователей.
     """
     return HttpResponse('Страница для залогиненных пользователей!')
 
@@ -55,6 +56,10 @@ class PostListView(ListView):
     ordering = '-created_at'
     paginate_by = 10
     template_name = 'blog/index.html'
+
+    def get_queryset(self):
+        posts = super().get_queryset().annotate(comment_count=Count('comments'))
+        return posts
 
 
 class PostCreateView(CreateView):
@@ -103,23 +108,23 @@ class PostUpdateView(OnlyAuthorMixin, UpdateView):
     model = Post
     form_class = PostForm
     template_name = 'blog/create.html'
-    
+
     def get_success_url(self):
         return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.pk})
 
 
 class PostDeleteView(LoginRequiredMixin, DeleteView):
-    """
-    Класс представления для удаления существующего поста.
-
-    Наследует от класса LoginRequiredMixin и DeleteView.
-
-    Атрибуты:
-        model: модель данных, используемая для удаления постов (Post).
-        success_url: URL, на который происходит перенаправление после успешного удаления поста.
-    """
     model = Post
-    success_url = reverse_lazy('index')
+    template_name = 'blog/create.html'  # Указываем шаблон для использования
+    success_url = reverse_lazy('blog:index')  # Убедитесь, что это правильный путь
+    pk_url_kwarg = 'post_id'  # Указываем, что pk это 'post_id' из URL
+
+    def get_queryset(self):
+        """
+        Этот метод уточняет, что пользователь может удалять только свои посты.
+        """
+        qs = super().get_queryset()
+        return qs.filter(author=self.request.user)
 
 
 class PostDetailView(DetailView):
@@ -137,7 +142,12 @@ class PostDetailView(DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        post = self.get_object()
+        # Сортировка комментариев по времени публикации
+        comments = post.comments.all().order_by('created_at')
         context['form'] = CommentForm()
+        context['comments'] = comments
+
         return context
 
 
@@ -176,7 +186,9 @@ class ProfileView(ListView):
         posts = Post.objects.filter(
             author=profile, is_published=True).select_related('author')
 
-        return posts.order_by('-created_at')
+        posts_annotated = posts.annotate(comment_count=Count('comments'))
+
+        return posts_annotated.order_by('-created_at')
 
     def get_context_data(self, **kwargs):
         """
@@ -204,7 +216,9 @@ class CategoryPostsView(ListView):
     def get_queryset(self):
         category_slug = self.kwargs.get('category_slug')
         category = get_object_or_404(Category, slug=category_slug)
-        return Post.objects.filter(category=category, is_published=True)
+        posts = Post.objects.filter(category=category, is_published=True).annotate(
+            comment_count=Count('comments'))
+        return posts
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -258,80 +272,44 @@ def edit_profile(request):
 
 
 class AddCommentView(View):
-
-    """
-    Класс для добавления комментария к посту.
-
-    Атрибуты:
-        - login_required: декоратор, требующий аутентификацию пользователя для доступа к методу post.
-
-    Методы:
-        post(self, request, pk):
-            Метод для обработки POST запроса на добавление комментария.
-
-            Аргументы:
-                request: объект запроса Django.
-                pk: идентификатор поста, к которому добавляется комментарий.
-
-            Возвращает:
-                - Перенаправляет пользователя на страницу с деталями поста, к которому был добавлен комментарий.
-
-            Логика работы:
-                - Получает пост по его идентификатору.
-                - Создает форму для комментария на основе данных из POST запроса.
-                - Если форма валидна:
-                    - Сохраняет комментарий, указывая текущего пользователя как автора и связывая с постом.
-                    - Перенаправляет пользователя на страницу с деталями поста.
-                - Если форма не валидна:
-                    - Перенаправляет пользователя на страницу с деталями поста.
-
-            Используемые формы:
-                - CommentForm: форма для добавления комментария.
-
-            Исключения:
-                Нет обработки конкретных исключений.
-    """
-
     form_class = CommentForm
     template_name = 'comments.html'
+
+    def get(self, request, *args, **kwargs):
+        post_id = self.kwargs.get('post_id')
+        post = Post.objects.get(id=post_id)
+        form = self.form_class()
+        comments = post.comments.all()
+        return render(request, self.template_name, {'form': form, 'post': post, 'comments': comments})
 
     def post(self, request, *args, **kwargs):
         form = self.form_class(request.POST)
         if form.is_valid():
-            post_id = kwargs['pk']
+            post_id = self.kwargs.get('post_id')
             post = Post.objects.get(id=post_id)
             comment = form.save(commit=False)
+            comment.author = request.user
             comment.post = post
             comment.save()
-            return render(request, 'comments.html', {'form': form, 'post': post})
+            return redirect('blog:post_detail', pk=post_id)
         else:
-            return render(request, 'comments.html', {'form': form})
+            return render(request, self.template_name, {'form': form})
 
 
-class EditCommentView(LoginRequiredMixin, View):
-    def get(self, request, post_id, comment_id):
-        comment = get_object_or_404(Comment, id=comment_id)
-        if request.user == comment.author:
-            form = CommentForm(instance=comment)
-            context = {
-                'user': request.user,
-                'post_id': post_id,
-                'comment_id': comment_id,
-                'form': form
-            }
-            return render(request, 'edit_comment.html', context)
-        else:
-            return redirect('blog:comment_list', post_id)
+class EditCommentView(UpdateView):
+    model = Comment
+    form_class = CommentForm
+    template_name = 'blog/comment.html'
+    success_url = reverse_lazy('blog:index')
 
-    def post(self, request, post_id, comment_id):
-        comment = get_object_or_404(Comment, id=comment_id)
-        if request.user == comment.author:
-            form = CommentForm(request.POST, instance=comment)
-            if form.is_valid():
-                form.save()
-            return redirect('blog:comment_list', post_id)
-        else:
-            return redirect('blog:comment_list', post_id)
+    def get_object(self, queryset=None):
+        comment_id = self.kwargs.get('comment_id')
+        return Comment.objects.get(id=comment_id)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['post_id'] = self.kwargs.get('post_id')
+        return context
 
 
 class DeleteCommentView(LoginRequiredMixin, View):
@@ -339,4 +317,4 @@ class DeleteCommentView(LoginRequiredMixin, View):
         comment = get_object_or_404(Comment, id=comment_id)
         if request.user == comment.author:
             comment.delete()
-        return redirect('blog:comment_list', post_id)
+        return redirect('blog:post_detail', pk=post_id)
