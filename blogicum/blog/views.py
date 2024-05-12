@@ -1,12 +1,13 @@
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.views import View
 from django.shortcuts import get_object_or_404, redirect, render
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.utils import timezone
 from django.db.models import Count
 from django.urls import reverse_lazy
 
@@ -52,13 +53,15 @@ class PostListView(ListView):
         template_name: имя шаблона для отображения списка постов ('blog/index.html').
     """
     model = Post
-    queryset = Post.objects.filter(is_published=True).select_related('author')
+    queryset = Post.objects.filter(is_published=True, pub_date__lte=timezone.now(
+    )).select_related('author').prefetch_related('category', 'location')
     ordering = '-created_at'
     paginate_by = 10
     template_name = 'blog/index.html'
 
     def get_queryset(self):
         posts = super().get_queryset().annotate(comment_count=Count('comments'))
+        posts = posts.filter(category__is_published=True)
         return posts
 
 
@@ -116,7 +119,8 @@ class PostUpdateView(OnlyAuthorMixin, UpdateView):
 class PostDeleteView(LoginRequiredMixin, DeleteView):
     model = Post
     template_name = 'blog/create.html'  # Указываем шаблон для использования
-    success_url = reverse_lazy('blog:index')  # Убедитесь, что это правильный путь
+    # Убедитесь, что это правильный путь
+    success_url = reverse_lazy('blog:index')
     pk_url_kwarg = 'post_id'  # Указываем, что pk это 'post_id' из URL
 
     def get_queryset(self):
@@ -183,27 +187,18 @@ class ProfileView(ListView):
         """
         username = self.kwargs['username']
         profile = get_object_or_404(User, username=username)
-        posts = Post.objects.filter(
-            author=profile, is_published=True).select_related('author')
+        posts = Post.objects.filter(author=profile).select_related(
+            'author').prefetch_related('comments', 'category', 'location')
 
         posts_annotated = posts.annotate(comment_count=Count('comments'))
 
-        return posts_annotated.order_by('-created_at')
+        return posts_annotated.order_by('-pub_date')
 
     def get_context_data(self, **kwargs):
-        """
-        Добавляет дополнительные данные в контекст шаблона для отображения.
-
-        Аргументы:
-            self: экземпляр класса ProfileView.
-            **kwargs: дополнительные аргументы.
-
-        Возвращает:
-            Словарь с дополнительными данными для передачи в шаблон.
-        """
         context = super().get_context_data(**kwargs)
-        context['profile'] = get_object_or_404(
-            User, username=self.kwargs['username'])
+        if 'profile' not in context:
+            context['profile'] = get_object_or_404(
+                User, username=self.kwargs['username'])
         return context
 
 
@@ -215,9 +210,14 @@ class CategoryPostsView(ListView):
 
     def get_queryset(self):
         category_slug = self.kwargs.get('category_slug')
-        category = get_object_or_404(Category, slug=category_slug)
-        posts = Post.objects.filter(category=category, is_published=True).annotate(
-            comment_count=Count('comments'))
+        category = get_object_or_404(Category, slug=category_slug, is_published=True)
+
+        if not category.is_published:
+            raise Http404("Категория не найдена")
+        
+        posts = Post.objects.filter(
+            category=category, is_published=True, pub_date__lte=timezone.now()).annotate(
+            comment_count=Count('comments')).order_by('-created_at')
         return posts
 
     def get_context_data(self, **kwargs):
