@@ -13,6 +13,7 @@ from .forms import CommentForm, PostForm, UserProfileForm
 from .models import Post, Category, Comment
 
 
+
 @login_required
 def simple_view(request):
     """
