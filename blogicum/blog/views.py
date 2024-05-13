@@ -277,7 +277,7 @@ def edit_profile(request):
         return HttpResponse('Для доступа к этой странице необходимо войти в систему.')
 
 
-class AddCommentView(OnlyAuthorMixin, View):
+class AddCommentView(View):
     form_class = CommentForm
     template_name = 'comments.html'
 
