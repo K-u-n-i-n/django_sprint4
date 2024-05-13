@@ -7,11 +7,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.db.models import Count
-from django.urls import reverse_lazy
+from django.urls import reverse_lazy, reverse
 
 from .forms import CommentForm, PostForm, UserProfileForm
 from .models import Post, Category, Comment
-
 
 
 @login_required
@@ -54,7 +53,7 @@ class PostListView(ListView):
     model = Post
     queryset = Post.objects.filter(is_published=True, pub_date__lte=timezone.now(
     )).select_related('author').prefetch_related('category', 'location')
-    ordering = '-created_at'
+    ordering = '-pub_date'
     paginate_by = 10
     template_name = 'blog/index.html'
 
@@ -80,7 +79,7 @@ class PostCreateView(LoginRequiredMixin, CreateView):
     model = Post
     form_class = PostForm
     template_name = 'blog/create.html'
-    success_url = reverse_lazy('blog:index')
+
     login_url = '/login/'
 
     def form_valid(self, form):
@@ -92,9 +91,15 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 
         Возвращает:
             Результат вызова метода form_valid родительского класса с переданным аргументом form.
-        """      
+        """
         form.instance.author = self.request.user
         return super().form_valid(form)
+
+    def get_success_url(self):
+        # Получаем username из объекта пользователя, связанного с созданным постом
+        username = self.object.author.username
+        # Возвращаем URL для перехода на страницу профиля пользователя
+        return reverse('blog:profile', args=[username])
 
 
 class PostUpdateView(OnlyAuthorMixin, UpdateView):
@@ -218,7 +223,7 @@ class CategoryPostsView(ListView):
 
         posts = Post.objects.filter(
             category=category, is_published=True, pub_date__lte=timezone.now()).annotate(
-            comment_count=Count('comments')).order_by('-created_at')
+            comment_count=Count('comments')).order_by('-pub_date')
         return posts
 
     def get_context_data(self, **kwargs):
