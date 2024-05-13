@@ -102,20 +102,23 @@ class PostCreateView(LoginRequiredMixin, CreateView):
         return reverse('blog:profile', args=[username])
 
 
-class PostUpdateView(OnlyAuthorMixin, UpdateView):
-    """
-    Класс представления для обновления существующего поста.
-
-    Наследует от класса OnlyAuthorMixin и UpdateView.
-
-    Атрибуты:
-        model: модель данных, используемая для обновления постов (Post).
-        form_class: класс формы, используемый для ввода данных при обновлении поста (PostForm).
-
-    """
+class PostUpdateView(UserPassesTestMixin, UpdateView):
     model = Post
     form_class = PostForm
     template_name = 'blog/create.html'
+
+    def test_func(self):
+        self.object = self.get_object()
+        return self.request.user.is_authenticated and self.object.author == self.request.user
+
+    def handle_no_permission(self):
+        if not self.request.user.is_authenticated:
+            # Если пользователь не аутентифицирован, перенаправляем на страницу поста
+            post_id = self.kwargs.get('pk')
+            return redirect(reverse('blog:post_detail', kwargs={'pk': post_id}))
+        else:
+            # Если пользователь не автор, используем стандартную обработку (403 Forbidden)
+            return super().handle_no_permission()
 
     def get_success_url(self):
         return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.pk})
@@ -277,7 +280,7 @@ def edit_profile(request):
         return HttpResponse('Для доступа к этой странице необходимо войти в систему.')
 
 
-class AddCommentView(View):
+class AddCommentView(LoginRequiredMixin, View):
     form_class = CommentForm
     template_name = 'comments.html'
 
@@ -306,15 +309,23 @@ class AddCommentView(View):
             return render(request, self.template_name, {'form': form})
 
 
-class EditCommentView(UpdateView):
+class EditCommentView(LoginRequiredMixin, UpdateView):
     model = Comment
     form_class = CommentForm
     template_name = 'blog/comment.html'
     success_url = reverse_lazy('blog:index')
 
+    def dispatch(self, request, *args, **kwargs):
+        # Вы можете добавить здесь любую предварительную логику
+        self.object = self.get_object()
+        if self.object.author != request.user:
+            raise Http404("Вы не авторизованы для удаления этого комментария.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_object(self, queryset=None):
         comment_id = self.kwargs.get('comment_id')
-        return Comment.objects.get(id=comment_id)
+        # Используем get_object_or_404 для корректной обработки отсутствующих объектов
+        return get_object_or_404(Comment, id=comment_id)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -322,9 +333,27 @@ class EditCommentView(UpdateView):
         return context
 
 
-class DeleteCommentView(LoginRequiredMixin, View):
-    def get(self, request, post_id, comment_id):
-        comment = get_object_or_404(Comment, id=comment_id)
-        if request.user == comment.author:
-            comment.delete()
-        return redirect('blog:post_detail', pk=post_id)
+class DeleteCommentView(LoginRequiredMixin, DeleteView):
+    model = Comment
+    template_name = 'blog/comment.html'  # Используем ваш общий шаблон
+    pk_url_kwarg = 'comment_id'
+
+    def dispatch(self, request, *args, **kwargs):
+        # Вы можете добавить здесь любую предварительную логику
+        self.object = self.get_object()
+        if self.object.author != request.user:
+            raise Http404("Вы не авторизованы для удаления этого комментария.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_success_url(self):
+        post_id = self.kwargs.get('post_id')
+        return reverse_lazy('blog:post_detail', kwargs={'pk': post_id})
+
+    def get_object(self, queryset=None):
+        """ Переопределяем метод для проверки прав пользователя. """
+        obj = super().get_object(queryset)
+        return obj
+
+    def post(self, request, *args, **kwargs):
+        # Обработка POST запроса, который подтверждает удаление
+        return self.delete(request, *args, **kwargs)
