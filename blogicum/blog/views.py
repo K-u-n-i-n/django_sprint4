@@ -5,8 +5,6 @@ from django.http import HttpResponse, Http404
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.core.exceptions import ObjectDoesNotExist
-from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.utils import timezone
 from django.db.models import Count
 from django.urls import reverse_lazy
@@ -65,7 +63,7 @@ class PostListView(ListView):
         return posts
 
 
-class PostCreateView(CreateView):
+class PostCreateView(LoginRequiredMixin, CreateView):
     """
     Класс представления для создания нового поста.
 
@@ -82,6 +80,7 @@ class PostCreateView(CreateView):
     form_class = PostForm
     template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
+    login_url = '/login/'
 
     def form_valid(self, form):
         """
@@ -92,7 +91,7 @@ class PostCreateView(CreateView):
 
         Возвращает:
             Результат вызова метода form_valid родительского класса с переданным аргументом form.
-        """
+        """      
         form.instance.author = self.request.user
         return super().form_valid(form)
 
@@ -210,11 +209,12 @@ class CategoryPostsView(ListView):
 
     def get_queryset(self):
         category_slug = self.kwargs.get('category_slug')
-        category = get_object_or_404(Category, slug=category_slug, is_published=True)
+        category = get_object_or_404(
+            Category, slug=category_slug, is_published=True)
 
         if not category.is_published:
             raise Http404("Категория не найдена")
-        
+
         posts = Post.objects.filter(
             category=category, is_published=True, pub_date__lte=timezone.now()).annotate(
             comment_count=Count('comments')).order_by('-created_at')
@@ -271,13 +271,18 @@ def edit_profile(request):
         return HttpResponse('Для доступа к этой странице необходимо войти в систему.')
 
 
-class AddCommentView(View):
+class AddCommentView(OnlyAuthorMixin, View):
     form_class = CommentForm
     template_name = 'comments.html'
 
+    def get_object(self):
+        if not hasattr(self, '_post'):
+            post_id = self.kwargs.get('post_id')
+            self._post = get_object_or_404(Post, id=post_id)
+        return self._post
+
     def get(self, request, *args, **kwargs):
-        post_id = self.kwargs.get('post_id')
-        post = Post.objects.get(id=post_id)
+        post = self.get_object()
         form = self.form_class()
         comments = post.comments.all()
         return render(request, self.template_name, {'form': form, 'post': post, 'comments': comments})
@@ -285,13 +290,12 @@ class AddCommentView(View):
     def post(self, request, *args, **kwargs):
         form = self.form_class(request.POST)
         if form.is_valid():
-            post_id = self.kwargs.get('post_id')
-            post = Post.objects.get(id=post_id)
+            post = self.get_object()
             comment = form.save(commit=False)
             comment.author = request.user
             comment.post = post
             comment.save()
-            return redirect('blog:post_detail', pk=post_id)
+            return redirect('blog:post_detail', pk=post.id)
         else:
             return render(request, self.template_name, {'form': form})
 
