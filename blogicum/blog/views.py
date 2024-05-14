@@ -99,7 +99,7 @@ class PostDetailView(DetailView):
         ):
 
             return post
-        raise Http404("You do not have permission to view this post.")
+        raise Http404('У вас нет разрешения на просмотр этого сообщения')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -159,23 +159,19 @@ class CategoryPostsView(ListView):
         return context
 
 
-def edit_profile(request):
-    if request.user.is_authenticated:
-        user = request.user
-        if request.method == 'POST':
-            form = UserProfileForm(request.POST, instance=user)
-            if form.is_valid():
-                form.save()
-                return redirect('blog:profile', username=user.username)
-        else:
-            form = UserProfileForm(instance=user)
+class EditProfileView(LoginRequiredMixin, UpdateView):
+    model = User
+    form_class = UserProfileForm
+    template_name = 'blog/user.html'
+    context_object_name = 'user'
 
-        context = {
-            'form': form
-        }
-        return render(request, 'blog/user.html', context)
-    else:
-        return HttpResponse('Вам необходимо войти в систему.')
+    def get_success_url(self):
+        return reverse_lazy(
+            'blog:profile', kwargs={'username': self.object.username}
+        )
+
+    def get_object(self):
+        return self.request.user
 
 
 class AddCommentView(LoginRequiredMixin, CreateView):
