@@ -87,8 +87,11 @@ class Comment(models.Model):
         User, on_delete=models.CASCADE, null=True,
         verbose_name='Автор комментария'
     )
-    post = models.ForeignKey(Post, related_name='comments', on_delete=models.CASCADE, null=True)
-    text = models.TextField()
+    post = models.ForeignKey(
+        Post, related_name='comments', on_delete=models.CASCADE, null=True)
+    text = models.TextField(
+        verbose_name='Текст'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
