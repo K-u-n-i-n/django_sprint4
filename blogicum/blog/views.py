@@ -1,54 +1,39 @@
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.views import View
 from django.shortcuts import get_object_or_404, redirect, render
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, HttpResponseRedirect
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.db.models import Count
 from django.urls import reverse_lazy, reverse
+from django.core.exceptions import PermissionDenied
 
 from .forms import CommentForm, PostForm, UserProfileForm
 from .models import Post, Category, Comment
 
 
-@login_required
-def simple_view(request):
-    """
-    Функция для отображения страницы только залогиненным пользователям.
-
-    Аргументы:
-        request: объект запроса Django.
-
-    Возвращает:
-        - HttpResponse с текстом 'Страница для залогиненных пользователей!'.
-
-    Логика работы:
-        - Проверяет, что пользователь авторизован.
-        - Возвращает HttpResponse с сообщением о том, что это страница только для залогиненных пользователей.
-    """
-    return HttpResponse('Страница для залогиненных пользователей!')
+# @login_required
+# def simple_view(request):
+#     """
+#     Функция для отображения страницы только залогиненным пользователям.
+#     """
+#     return HttpResponse('Страница для залогиненных пользователей!')
 
 
-class OnlyAuthorMixin(UserPassesTestMixin):
-    """ Проверяет, является ли текущий пользователь автором объекта."""
+# class OnlyAuthorMixin(UserPassesTestMixin):
+#     """ Проверяет, является ли текущий пользователь автором объекта."""
 
-    def test_func(self):
-        object = self.get_object()
-        return object.author == self.request.user
+#     def test_func(self):
+#         object = self.get_object()
+#         return object.author == self.request.user
 
 
 class PostListView(ListView):
     """
     Класс представления для списка постов.
 
-    Атрибуты:
-        model: модель данных, используемая для отображения списка постов (Post).
-        queryset: запрос к базе данных для получения только опубликованных постов с информацией об авторе.
-        ordering: порядок сортировки постов по дате создания (убывающий).
-        paginate_by: количество постов на одной странице пагинации.
-        template_name: имя шаблона для отображения списка постов ('blog/index.html').
     """
     model = Post
     queryset = Post.objects.filter(is_published=True, pub_date__lte=timezone.now(
@@ -67,14 +52,6 @@ class PostCreateView(LoginRequiredMixin, CreateView):
     """
     Класс представления для создания нового поста.
 
-    Атрибуты:
-        model: модель данных, используемая для создания постов (Post).
-        form_class: класс формы, используемый для ввода данных при создании поста (PostForm).
-        template_name: имя шаблона для отображения формы создания поста ('blog/create.html').
-        success_url: URL, на который будет перенаправлен пользователь после успешного создания поста ('blog:index').
-
-    Методы:
-        form_valid(self, form): метод, вызываемый при валидации формы. Устанавливает текущего пользователя как автора поста.
     """
     model = Post
     form_class = PostForm
@@ -86,11 +63,6 @@ class PostCreateView(LoginRequiredMixin, CreateView):
         """
         Устанавливает текущего пользователя как автора поста перед сохранением.
 
-        Аргументы:
-            form: экземпляр формы с данными о новом посте.
-
-        Возвращает:
-            Результат вызова метода form_valid родительского класса с переданным аргументом form.
         """
         form.instance.author = self.request.user
         return super().form_valid(form)
@@ -102,7 +74,10 @@ class PostCreateView(LoginRequiredMixin, CreateView):
         return reverse('blog:profile', args=[username])
 
 
-class PostUpdateView(UserPassesTestMixin, UpdateView):
+class PostUpdateView(UpdateView):
+    """
+    Класс для редактирования поста.
+    """
     model = Post
     form_class = PostForm
     template_name = 'blog/create.html'
@@ -111,30 +86,23 @@ class PostUpdateView(UserPassesTestMixin, UpdateView):
         self.object = self.get_object()
         return self.request.user.is_authenticated and self.object.author == self.request.user
 
-    def handle_no_permission(self):
-        if not self.request.user.is_authenticated:
-            # Если пользователь не аутентифицирован, перенаправляем на страницу поста
-            post_id = self.kwargs.get('pk')
-            return redirect(reverse('blog:post_detail', kwargs={'pk': post_id}))
+    def dispatch(self, request, *args, **kwargs):
+        if not self.test_func():
+            return redirect(reverse('blog:post_detail', kwargs={'post_id': self.kwargs['pk']}))
         else:
-            # Если пользователь не автор, используем стандартную обработку (403 Forbidden)
-            return super().handle_no_permission()
+            return super().dispatch(request, *args, **kwargs)
 
     def get_success_url(self):
-        return reverse_lazy('blog:post_detail', kwargs={'pk': self.object.pk})
+        return reverse_lazy('blog:post_detail', kwargs={'post_id': self.object.pk})
 
 
 class PostDeleteView(LoginRequiredMixin, DeleteView):
     model = Post
-    template_name = 'blog/create.html'  # Указываем шаблон для использования
-    # Убедитесь, что это правильный путь
+    template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
-    pk_url_kwarg = 'post_id'  # Указываем, что pk это 'post_id' из URL
+    pk_url_kwarg = 'post_id'
 
     def get_queryset(self):
-        """
-        Этот метод уточняет, что пользователь может удалять только свои посты.
-        """
         qs = super().get_queryset()
         return qs.filter(author=self.request.user)
 
@@ -142,20 +110,47 @@ class PostDeleteView(LoginRequiredMixin, DeleteView):
 class PostDetailView(DetailView):
     """
     Класс представления для отображения детальной информации о посте.
-
-    Наследует от класса DetailView.
-
-    Атрибуты:
-        model: модель данных, используемая для отображения информации о посте (Post).
     """
     model = Post
     template_name = 'blog/detail.html'
     context_object_name = 'post'
 
+    def get_object(self, queryset=None):
+        # Получаем ID поста из параметров URL
+        post_id = self.kwargs.get('post_id')
+        # Ищем пост по ID с дополнительным условием для времени публикации
+        post = get_object_or_404(Post, id=post_id)
+
+        # Проверяем, является ли текущий пользователь автором поста или
+        # пост опубликован и категория опубликована, и дата публикации меньше или равна текущему времени
+        if (post.author == self.request.user
+                or (post.is_published and post.category.is_published and post.pub_date <= timezone.now())):
+            return post
+
+        # Если условия не выполняются, выбрасываем ошибку 404
+        raise Http404("You do not have permission to view this post.")
+
+    # # данный код позволяет получить объект поста на основе переданного идентификатора
+    # def get_object(self, queryset=None):
+    #     post_id = self.kwargs.get('post_id')
+    #     return get_object_or_404(Post, id=post_id)
+
+    # def dispatch(self, request, *args, **kwargs):
+    #     post = self.get_object()
+    #     category = post.category
+
+    #     if (post.is_published and category.is_published) or post.author == self.request.user:
+    #         self.queryset = Post.objects
+    #         return super().dispatch(request, *args, **kwargs)
+
+    #     raise Http404
+
     def get_context_data(self, **kwargs):
+        '''данный метод добавляет в контекст данные о посте,
+          форму для добавления комментариев и список комментариев,
+            которые будут использоваться при отображении страницы.'''
         context = super().get_context_data(**kwargs)
         post = self.get_object()
-        # Сортировка комментариев по времени публикации
         comments = post.comments.all().order_by('created_at')
         context['form'] = CommentForm()
         context['comments'] = comments
@@ -167,17 +162,6 @@ class ProfileView(ListView):
     """
     Класс представления для отображения профиля пользователя и его постов.
 
-    Наследует от класса ListView.
-
-    Атрибуты:
-        model: модель данных, используемая для отображения постов (Post).
-        template_name: имя шаблона для отображения профиля пользователя и его постов.
-        context_object_name: имя объекта контекста, содержащего список постов.
-        paginate_by: количество постов на одной странице пагинации.
-
-    Методы:
-        get_queryset(self): метод, возвращающий список постов пользователя.
-        get_context_data(self, **kwargs): метод, добавляющий дополнительные данные в контекст шаблона для отображения.
     """
     model = Post
     template_name = 'blog/profile.html'
@@ -187,11 +171,6 @@ class ProfileView(ListView):
         """
         Возвращает список постов пользователя для отображения.
 
-        Аргументы:
-            self: экземпляр класса ProfileView.
-
-        Возвращает:
-            QuerySet с постами пользователя, отсортированными по дате создания.
         """
         username = self.kwargs['username']
         profile = get_object_or_404(User, username=username)
@@ -241,24 +220,6 @@ def edit_profile(request):
     """
     Функция для редактирования профиля пользователя.
 
-    Аргументы:
-        request: объект запроса Django.
-
-    Возвращает:
-        Если пользователь аутентифицирован:
-            - Форму для редактирования профиля пользователя, отображенную на странице 'blog/user.html'.
-        Если пользователь не аутентифицирован:
-            - Страницу с сообщением 'Для доступа к этой странице необходимо войти в систему.'
-
-    При отправке формы методом POST:
-        - Проверяет валидность формы и сохраняет изменения.
-        - Перенаправляет пользователя на страницу своего профиля.
-
-    Используемые формы:
-        - UserProfileForm: форма для редактирования профиля пользователя.
-
-    Исключения:
-        Нет обработки конкретных исключений.
     """
     if request.user.is_authenticated:
         user = request.user
@@ -280,33 +241,49 @@ def edit_profile(request):
         return HttpResponse('Для доступа к этой странице необходимо войти в систему.')
 
 
-class AddCommentView(LoginRequiredMixin, View):
+class AddCommentView(LoginRequiredMixin, CreateView):
+    model = Comment
     form_class = CommentForm
     template_name = 'comments.html'
+   
+    def get_success_url(self):
+        post_id = self.kwargs.get('post_id')
+        return reverse('blog:post_detail', kwargs={'post_id': post_id})
 
-    def get_object(self):
-        if not hasattr(self, '_post'):
-            post_id = self.kwargs.get('post_id')
-            self._post = get_object_or_404(Post, id=post_id)
-        return self._post
+    def form_valid(self, form):
+        post_id = self.kwargs.get('post_id')
+        post = get_object_or_404(Post, id=post_id)
+        form.instance.post = post
+        form.instance.author = self.request.user
+        return super().form_valid(form)
 
-    def get(self, request, *args, **kwargs):
-        post = self.get_object()
-        form = self.form_class()
-        comments = post.comments.all()
-        return render(request, self.template_name, {'form': form, 'post': post, 'comments': comments})
 
-    def post(self, request, *args, **kwargs):
-        form = self.form_class(request.POST)
-        if form.is_valid():
-            post = self.get_object()
-            comment = form.save(commit=False)
-            comment.author = request.user
-            comment.post = post
-            comment.save()
-            return redirect('blog:post_detail', pk=post.id)
-        else:
-            return render(request, self.template_name, {'form': form})
+
+
+
+    # def get_object(self):
+    #     if not hasattr(self, '_post'):
+    #         post_id = self.kwargs.get('post_id')
+    #         self._post = get_object_or_404(Post, id=post_id)
+    #     return self._post
+
+    # def get(self, request, *args, **kwargs):
+    #     post = self.get_object()
+    #     form = self.form_class()
+    #     comments = post.comments.all()
+    #     return render(request, self.template_name, {'form': form, 'post': post, 'comments': comments})
+
+    # def post(self, request, *args, **kwargs):
+    #     form = self.form_class(request.POST)
+    #     if form.is_valid():
+    #         post = self.get_object()
+    #         comment = form.save(commit=False)
+    #         comment.author = request.user
+    #         comment.post = post
+    #         comment.save()
+    #         return redirect('blog:post_detail', pk=post.id)
+    #     else:
+    #         return render(request, self.template_name, {'form': form})
 
 
 class EditCommentView(LoginRequiredMixin, UpdateView):
@@ -347,7 +324,7 @@ class DeleteCommentView(LoginRequiredMixin, DeleteView):
 
     def get_success_url(self):
         post_id = self.kwargs.get('post_id')
-        return reverse_lazy('blog:post_detail', kwargs={'pk': post_id})
+        return reverse_lazy('blog:post_detail', kwargs={'post_id': post_id})
 
     def get_object(self, queryset=None):
         """ Переопределяем метод для проверки прав пользователя. """

@@ -5,7 +5,8 @@ app_name = 'blog'
 
 urlpatterns = [
     path('', views.PostListView.as_view(), name='index'),
-    path('posts/<int:pk>/', views.PostDetailView.as_view(), name='post_detail'),
+#     path('posts/<int:pk>/', views.PostDetailView.as_view(), name='post_detail'),
+    path('posts/<int:post_id>/', views.PostDetailView.as_view(), name='post_detail'),
     path('posts/<int:pk>/edit/', views.PostUpdateView.as_view(), name='edit_post'),
     path('posts/<post_id>/delete/',
          views.PostDeleteView.as_view(), name='delete_post'),
