@@ -1,5 +1,4 @@
 from django.shortcuts import render
-from django.conf.urls import handler404
 from django.views.generic import TemplateView
 
 

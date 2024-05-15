@@ -1,7 +1,7 @@
 from django.views.generic import ListView, CreateView
 from django.views.generic import UpdateView, DeleteView, DetailView
 from django.shortcuts import get_object_or_404, redirect
-from django.http import HttpResponse, Http404
+from django.http import Http404
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.utils import timezone
