@@ -1,6 +1,6 @@
 from django.views.generic import ListView, CreateView
 from django.views.generic import UpdateView, DeleteView, DetailView
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect
 from django.http import HttpResponse, Http404
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
@@ -19,7 +19,6 @@ class PostListView(ListView):
         is_published=True,
         pub_date__lte=timezone.now()
     ).select_related('author').prefetch_related('category', 'location')
-
     ordering = '-pub_date'
     paginate_by = 10
     template_name = 'blog/index.html'
@@ -87,7 +86,6 @@ class PostDeleteView(LoginRequiredMixin, DeleteView):
 class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
-    context_object_name = 'post'
 
     def get_object(self, queryset=None):
         post_id = self.kwargs.get('post_id')
@@ -133,29 +131,31 @@ class ProfileView(ListView):
 
 
 class CategoryPostsView(ListView):
-    model = Post
-    template_name = 'blog/category.html'
-    context_object_name = 'posts'
+    # model = Post
+    queryset = Post.objects.filter(
+        is_published=True,
+        pub_date__lte=timezone.now()
+    ).select_related('author', 'category', 'location')
+    ordering = '-pub_date'
     paginate_by = 10
+    template_name = 'blog/category.html'
 
     def get_queryset(self):
-        category_slug = self.kwargs.get('category_slug')
-        category = get_object_or_404(
-            Category, slug=category_slug, is_published=True)
-
-        if not category.is_published:
+        self.category = Category.objects.filter(
+            slug=self.kwargs['category_slug'], is_published=True
+        ).first()
+        if not self.category:
             raise Http404("Категория не найдена")
 
-        posts = Post.objects.filter(
-            category=category, is_published=True, pub_date__lte=timezone.now()
-        ).annotate(comment_count=Count('comments')).order_by('-pub_date')
+        posts = super().get_queryset().annotate(
+            comment_count=Count('comments')
+        ).filter(category=self.category)
+        posts = posts.filter(category__is_published=True)
         return posts
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        category_slug = self.kwargs.get('category_slug')
-        category = get_object_or_404(Category, slug=category_slug)
-        context['category'] = category
+        context['category'] = self.category
         return context
 
 
@@ -163,7 +163,6 @@ class EditProfileView(LoginRequiredMixin, UpdateView):
     model = User
     form_class = UserProfileForm
     template_name = 'blog/user.html'
-    context_object_name = 'user'
 
     def get_success_url(self):
         return reverse_lazy(
