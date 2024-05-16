@@ -136,11 +136,9 @@ class CategoryPostsView(ListView):
     template_name = 'blog/category.html'
 
     def get_queryset(self):
-        self.category = Category.objects.filter(
-            slug=self.kwargs['category_slug'], is_published=True
-        ).first()
-        if not self.category:
-            raise Http404("Категория не найдена")
+        self.category = get_object_or_404(
+            Category, slug=self.kwargs['category_slug'], is_published=True
+        )
 
         queryset = Post.objects.filter(
             is_published=True,
