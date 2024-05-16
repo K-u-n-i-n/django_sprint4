@@ -131,12 +131,7 @@ class ProfileView(ListView):
 
 
 class CategoryPostsView(ListView):
-    # model = Post
-    queryset = Post.objects.filter(
-        is_published=True,
-        pub_date__lte=timezone.now()
-    ).select_related('author', 'category', 'location')
-    ordering = '-pub_date'
+    model = Post
     paginate_by = 10
     template_name = 'blog/category.html'
 
@@ -147,11 +142,18 @@ class CategoryPostsView(ListView):
         if not self.category:
             raise Http404("Категория не найдена")
 
-        posts = super().get_queryset().annotate(
-            comment_count=Count('comments')
-        ).filter(category=self.category)
-        posts = posts.filter(category__is_published=True)
-        return posts
+        queryset = Post.objects.filter(
+            is_published=True,
+            pub_date__lte=timezone.now(),
+            category=self.category
+        ).select_related('author',
+                         'category',
+                         'location').order_by('-pub_date')
+
+        queryset = queryset.annotate(comment_count=Count('comments'))
+        queryset = queryset.filter(category__is_published=True)
+
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
