@@ -15,20 +15,20 @@ from .models import Post, Category, Comment
 
 class PostListView(ListView):
     model = Post
-    queryset = Post.objects.filter(
-        is_published=True,
-        pub_date__lte=timezone.now()
-    ).select_related('author').prefetch_related('category', 'location')
-    ordering = '-pub_date'
     paginate_by = 10
     template_name = 'blog/index.html'
 
     def get_queryset(self):
-        posts = super().get_queryset().annotate(
-            comment_count=Count('comments')
-        )
-        posts = posts.filter(category__is_published=True)
-        return posts
+        queryset = Post.objects.filter(
+            is_published=True,
+            pub_date__lte=timezone.now()
+        ).select_related('author').prefetch_related(
+            'category', 'location').order_by('-pub_date')
+
+        queryset = queryset.annotate(comment_count=Count('comments'))
+        queryset = queryset.filter(category__is_published=True)
+
+        return queryset
 
 
 class PostCreateView(LoginRequiredMixin, CreateView):
