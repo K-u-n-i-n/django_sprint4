@@ -5,6 +5,7 @@ from django.http import Http404
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count
 from django.urls import reverse_lazy, reverse
 
@@ -199,7 +200,9 @@ class EditCommentView(LoginRequiredMixin, UpdateView):
     def dispatch(self, request, *args, **kwargs):
         self.object = self.get_object()
         if self.object.author != request.user:
-            raise Http404("Вы не авторизованы для удаления этого комментария.")
+            raise PermissionDenied(
+                'Вы не авторизованы для редактирования этого комментария.'
+            )
         return super().dispatch(request, *args, **kwargs)
 
     def get_object(self, queryset=None):
@@ -220,16 +223,14 @@ class DeleteCommentView(LoginRequiredMixin, DeleteView):
     def dispatch(self, request, *args, **kwargs):
         self.object = self.get_object()
         if self.object.author != request.user:
-            raise Http404("Вы не авторизованы для удаления этого комментария.")
+            raise PermissionDenied(
+                'Вы не авторизованы для удаления этого комментария.'
+            )
         return super().dispatch(request, *args, **kwargs)
 
     def get_success_url(self):
         post_id = self.kwargs.get('post_id')
         return reverse_lazy('blog:post_detail', kwargs={'post_id': post_id})
-
-    def get_object(self, queryset=None):
-        obj = super().get_object(queryset)
-        return obj
 
     def post(self, request, *args, **kwargs):
         return self.delete(request, *args, **kwargs)
