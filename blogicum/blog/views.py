@@ -22,12 +22,12 @@ class PostListView(ListView):
     def get_queryset(self):
         queryset = Post.objects.filter(
             is_published=True,
-            pub_date__lte=timezone.now()
+            pub_date__lte=timezone.now(),
+            category__is_published=True
         ).select_related('author').prefetch_related(
-            'category', 'location').order_by('-pub_date')
-
-        queryset = queryset.annotate(comment_count=Count('comments'))
-        queryset = queryset.filter(category__is_published=True)
+            'category', 'location').order_by('-pub_date').annotate(
+                comment_count=Count('comments')
+        )
 
         return queryset
 
