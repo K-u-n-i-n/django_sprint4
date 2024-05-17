@@ -98,7 +98,7 @@ class PostDetailView(DetailView):
         ):
 
             return post
-        raise Http404('У вас нет разрешения на просмотр этого сообщения')
+        raise Http404('Страница не найдена')  # в тестах ожидается (404)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
